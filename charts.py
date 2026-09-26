@@ -5,11 +5,40 @@ town-level scatter from that deck, and the profile comparison is the per-level
 view that the deck showed as a governorate heatmap, re-cut for one town.
 """
 
+import json
+import pathlib
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
 from data_prep import LEVEL_ORDER
+
+GEOJSON_PATH = pathlib.Path(__file__).resolve().parent / "lebanon_adm1.geojson"
+
+# geoBoundaries names the governorates in French and reflects the 2017 split of
+# Keserwan-Jbeil out of Mount Lebanon. This dataset predates that split and rolls
+# those districts into Mount Lebanon, so both shapes take the same value. Beirut
+# has no towns in the dataset at all.
+SHAPE_TO_GOV = {
+    "Aakkâr": "Akkar",
+    "Baalbek-Hermel": "Baalbek-Hermel",
+    "Béqaa": "Beqaa",
+    "Liban-Nord": "North",
+    "Liban-Sud": "South",
+    "Mont-Liban": "Mount Lebanon",
+    "Keserwan-Jbeil": "Mount Lebanon",
+    "Nabatîyé": "Nabatieh",
+    "Beyrouth": None,
+}
+
+# Metric -> (column, aggregation label, colour direction)
+MAP_METRICS = {
+    "University attainment": ("University", "% of residents", False),
+    "Illiteracy": ("Illiterate", "% of residents", True),
+    "School dropout": ("Dropout", "% of residents", True),
+    "Need score": ("NeedScore", "points", True),
+}
 
 # Light-mode tokens, matching the deck so the two deliverables read as one set.
 SURFACE = "#fcfcfb"
@@ -154,4 +183,98 @@ def profile_comparison(town_row: pd.Series, peers: pd.DataFrame,
         legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="right", x=1,
                     font=dict(size=12)),
     )
+    return fig
+
+
+def _load_geojson():
+    with open(GEOJSON_PATH, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def governorate_map(df: pd.DataFrame, metric_label: str,
+                    highlight: list[str] | None = None) -> go.Figure:
+    """National overview: each governorate shaded by the chosen metric.
+
+    Gives the drill-down its geographic context — which corner of the country a
+    selection actually refers to — without pretending to town-level precision the
+    dataset has no coordinates for.
+    """
+    column, unit, reverse = MAP_METRICS[metric_label]
+    gj = _load_geojson()
+    means = df.groupby("Governorate")[column].mean()
+
+    rows = []
+    for feature in gj["features"]:
+        shape = feature["properties"]["shapeName"]
+        gov = SHAPE_TO_GOV.get(shape)
+        if gov is None or gov not in means:
+            continue
+        rows.append({"shapeName": shape, "Governorate": gov,
+                     "value": means[gov], "towns": int((df["Governorate"] == gov).sum())})
+    mdf = pd.DataFrame(rows)
+
+    scale = list(reversed(PEER_SCALE)) if reverse else PEER_SCALE
+    fig = go.Figure(
+        go.Choropleth(
+            geojson=gj, locations=mdf["shapeName"], featureidkey="properties.shapeName",
+            z=mdf["value"], colorscale=scale,
+            marker=dict(line=dict(color=SURFACE, width=1.2)),
+            customdata=np.stack([mdf["Governorate"], mdf["towns"]], axis=-1),
+            hovertemplate="<b>%{customdata[0]}</b><br>" + metric_label +
+                          ": %{z:.1f} " + unit + "<br>%{customdata[1]} towns<extra></extra>",
+            colorbar=dict(title=unit, thickness=13, len=0.72, outlinewidth=0,
+                          tickfont=dict(color=MUTED, size=11),
+                          title_font=dict(color=INK_2, size=12)),
+        )
+    )
+
+    # Ring the governorates currently in scope so the map tracks the sidebar.
+    if highlight:
+        shapes = [s for s, g in SHAPE_TO_GOV.items() if g in highlight]
+        sel = {"type": "FeatureCollection",
+               "features": [f for f in gj["features"]
+                            if f["properties"]["shapeName"] in shapes]}
+        fig.add_trace(
+            go.Choropleth(
+                geojson=sel, locations=shapes, featureidkey="properties.shapeName",
+                z=[0] * len(shapes), showscale=False,
+                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                marker=dict(line=dict(color=GOV_COLOR, width=3)),
+                hoverinfo="skip",
+            )
+        )
+
+    fig.update_geos(fitbounds="locations", visible=False, bgcolor=SURFACE)
+    _style(fig, f"{metric_label} by governorate",
+           "Outlined regions are the ones selected in the sidebar", height=430)
+    fig.update_layout(margin=dict(l=10, r=10, t=76, b=10),
+                      geo=dict(bgcolor=SURFACE))
+    return fig
+
+
+def need_ranking(peers: pd.DataFrame, town_row: pd.Series, top_n: int = 15) -> go.Figure:
+    """The towns currently in scope, ranked by need — the filters made concrete."""
+    ranked = peers.nlargest(top_n, "NeedScore").sort_values("NeedScore")
+    selected = ranked["Town"] == town_row["Town"]
+    colors = [GOV_COLOR if s else TOWN_COLOR for s in selected]
+
+    fig = go.Figure(
+        go.Bar(
+            x=ranked["NeedScore"], y=ranked["Town"], orientation="h",
+            marker=dict(color=colors, line=dict(width=0), cornerradius=3),
+            text=[f"{v:+.0f}" for v in ranked["NeedScore"]],
+            textposition="outside", textfont=dict(size=12, color=INK_2),
+            customdata=ranked["Governorate"],
+            hovertemplate="<b>%{y}</b> · %{customdata}"
+                          "<br>Need score: %{x:+.0f} points<extra></extra>",
+            cliponaxis=False,
+        )
+    )
+    shown = min(top_n, len(peers))
+    _style(fig, f"Highest-need towns in scope (top {shown})",
+           "Need = (illiterate + elementary) − (university + higher education); "
+           "your selected town is highlighted", height=470)
+    fig.update_xaxes(title="Need score (percentage points)")
+    fig.update_yaxes(title=None, showgrid=False)
+    fig.update_layout(bargap=0.3)
     return fig
