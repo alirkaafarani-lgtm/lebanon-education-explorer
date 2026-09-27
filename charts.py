@@ -222,7 +222,8 @@ def _load_geojson():
 
 
 def governorate_map(df: pd.DataFrame, metric_label: str,
-                    highlight: list[str] | None = None) -> go.Figure:
+                    highlight: list[str] | None = None,
+                    in_scope: pd.DataFrame | None = None) -> go.Figure:
     """National overview: each governorate shaded by the chosen metric.
 
     Gives the drill-down its geographic context — which corner of the country a
@@ -239,8 +240,11 @@ def governorate_map(df: pd.DataFrame, metric_label: str,
         gov = SHAPE_TO_GOV.get(shape)
         if gov is None or gov not in means:
             continue
+        scoped = (0 if in_scope is None
+                  else int((in_scope["Governorate"] == gov).sum()))
         rows.append({"shapeName": shape, "Governorate": gov,
-                     "value": means[gov], "towns": int((df["Governorate"] == gov).sum())})
+                     "value": means[gov], "towns": int((df["Governorate"] == gov).sum()),
+                     "scoped": scoped})
     mdf = pd.DataFrame(rows)
 
     scale = list(reversed(PEER_SCALE)) if reverse else PEER_SCALE
@@ -249,9 +253,12 @@ def governorate_map(df: pd.DataFrame, metric_label: str,
             geojson=gj, locations=mdf["shapeName"], featureidkey="properties.shapeName",
             z=mdf["value"], colorscale=scale,
             marker=dict(line=dict(color=SURFACE, width=1.2)),
-            customdata=np.stack([mdf["Governorate"], mdf["towns"]], axis=-1),
+            customdata=np.stack([mdf["Governorate"], mdf["towns"], mdf["scoped"]],
+                                axis=-1),
             hovertemplate="<b>%{customdata[0]}</b><br>" + metric_label +
-                          ": %{z:.1f} " + unit + "<br>%{customdata[1]} towns<extra></extra>",
+                          ": %{z:.1f} " + unit +
+                          "<br>%{customdata[1]} towns · %{customdata[2]} in your scope"
+                          "<extra></extra>",
             colorbar=dict(title=unit, thickness=13, len=0.72, outlinewidth=0,
                           tickfont=dict(color=MUTED, size=11),
                           title_font=dict(color=INK_2, size=12)),

@@ -47,6 +47,9 @@ st.markdown(
           padding:.22rem .7rem; font-size:.82rem; font-weight:600; }
   .chip.hot { background:#fdefe9; color:#b2431c; }
   .note { font-size:.86rem; color:#898781; line-height:1.5; }
+  .scope { background:#0b0b0b; color:#f6f6f3; border-radius:10px;
+           padding:.55rem .9rem; font-size:.95rem; margin:.2rem 0 .7rem; }
+  .scope b { color:#7fb2f0; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -135,57 +138,75 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_map, tab_drill, tab_why, tab_method = st.tabs(
-    ["🗺️  Map", "🔍  Drill-down", "🎛️  Controls", "📋  Method"]
+# ============================================================== live scope
+# Everything below responds to the sidebar. It stays on the main page rather
+# than in a tab: Streamlit resets to the first tab on every rerun, so filter-
+# driven charts hidden behind a tab look like they are doing nothing.
+pct = (peers["NeedScore"] < town_row["NeedScore"]).mean() * 100
+lo, hi = peers["University"].min(), peers["University"].max()
+hot = "hot" if town_row["NeedScore"] > 0 else ""
+band_note = ("all need levels" if (need_band[0] <= lo_need and need_band[1] >= hi_need)
+             else f"need {need_band[0]:+.0f} to {need_band[1]:+.0f}")
+
+st.markdown(
+    f"""
+<div class="scope">
+  <b>{len(peers):,}</b> towns in scope &nbsp;·&nbsp; {scope_label} &nbsp;·&nbsp;
+  {band_note} &nbsp;·&nbsp; showing <b>{selected_town}</b>
+</div>
+""",
+    unsafe_allow_html=True,
 )
-
-# ====================================================================== map
-with tab_map:
-    map_metric = st.radio("Colour by", options=list(MAP_METRICS.keys()),
-                          horizontal=True, label_visibility="collapsed")
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        st.plotly_chart(governorate_map(df, map_metric, selected_govs),
-                        width="stretch")
-    with c2:
-        st.markdown(
-            '<p class="note">The map never filters — all seven regions stay on '
-            'screen so the drill-down keeps its context. Your selection is '
-            'outlined.<br><br>Switch the measure: the ranking barely moves. That '
-            'consistency is what makes the regional story look convincing — and '
-            'why the town-level views break it.<br><br>'
-            'Boundaries: geoBoundaries (CC BY 4.0). Keserwan-Jbeil was split from '
-            'Mount Lebanon in 2017, after this data, so both carry one value. '
-            'Beirut is unfilled — no towns in the dataset.</p>',
-            unsafe_allow_html=True,
-        )
-
-# =============================================================== drill-down
-with tab_drill:
-    pct = (peers["NeedScore"] < town_row["NeedScore"]).mean() * 100
-    lo, hi = peers["University"].min(), peers["University"].max()
-    hot = "hot" if town_row["NeedScore"] > 0 else ""
-    st.markdown(
-        f"""
+st.markdown(
+    f"""
 <div class="chips">
   <span class="chip">📍 {selected_town}</span>
   <span class="chip">{town_row['Governorate']}</span>
   <span class="chip {hot}">need {town_row['NeedScore']:+.0f} · worse than {pct:.0f}% in scope</span>
   <span class="chip">university {town_row['University']:.0f}%</span>
   <span class="chip">illiterate {town_row['Illiterate']:.0f}%</span>
-  <span class="chip">{len(peers):,} towns in scope · spread {lo:.0f}–{hi:.0f}%</span>
+  <span class="chip">spread {lo:.0f}–{hi:.0f}%</span>
 </div>
 """,
+    unsafe_allow_html=True,
+)
+
+left, right = st.columns(2)
+with left:
+    st.plotly_chart(peer_scatter(peers, town_row), width="stretch")
+with right:
+    st.plotly_chart(
+        profile_comparison(town_row, peers, national, scope_label), width="stretch"
+    )
+st.plotly_chart(need_ranking(peers, town_row), width="stretch")
+
+st.divider()
+
+# ====================================================================== map
+st.markdown('<p class="eyebrow">National context</p>', unsafe_allow_html=True)
+map_metric = st.radio("Colour by", options=list(MAP_METRICS.keys()),
+                      horizontal=True, label_visibility="collapsed")
+c1, c2 = st.columns([3, 1])
+with c1:
+    st.plotly_chart(governorate_map(df, map_metric, selected_govs, peers),
+                    width="stretch")
+with c2:
+    st.markdown(
+        '<p class="note">The map deliberately shows <b>all</b> seven regions, '
+        'whatever the filters say, so the drill-down keeps its national context. '
+        'Your selected regions are outlined, and each region\'s hover reports how '
+        'many of its towns survived your filters.<br><br>'
+        'Switch the measure: the ranking barely moves. That consistency is what '
+        'makes the regional story look convincing — and why the town-level charts '
+        'above break it.<br><br>'
+        'Boundaries: geoBoundaries (CC BY 4.0). Keserwan-Jbeil was split from '
+        'Mount Lebanon in 2017, after this data, so both carry one value. '
+        'Beirut is unfilled — no towns in the dataset.</p>',
         unsafe_allow_html=True,
     )
-    left, right = st.columns(2)
-    with left:
-        st.plotly_chart(peer_scatter(peers, town_row), width="stretch")
-    with right:
-        st.plotly_chart(
-            profile_comparison(town_row, peers, national, scope_label), width="stretch"
-        )
-    st.plotly_chart(need_ranking(peers, town_row), width="stretch")
+
+st.divider()
+tab_why, tab_method = st.tabs(["🎛️  Why these controls", "📋  Method"])
 
 # ================================================================= controls
 with tab_why:
