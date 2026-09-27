@@ -3,7 +3,7 @@
 An interactive drill-down through town-level educational attainment in Lebanon,
 built with Streamlit and Plotly for **MSBA 325 — Data Visualization**.
 
-**Live app:** _(deployment pending — link goes here)_
+**Live app: https://lebanon-education-explorer-ark24.streamlit.app/**
 
 ## What it shows
 
@@ -23,21 +23,33 @@ Two findings drive the page:
   education, 66 fall outside Akkar and Baalbek-Hermel, and all seven governorates
   are represented.
 
-## The two linked controls
+## The linked controls
 
-The controls are deliberately dependent rather than independent filters:
+The controls are deliberately dependent rather than independent filters. Each one
+narrows the next, so the page drills down — **region → need band → town**:
 
 1. **Governorate** (multiselect) — sets the peer group.
-2. **Town** (dropdown) — **its options are rebuilt from the governorate
-   selection.** Choosing Akkar narrows roughly 910 towns to 139, so the reader
-   drills down from a region into one place inside it rather than filtering two
-   things separately.
+2. **Need band** (range slider) — **its bounds are recomputed from the governorate
+   selection**, so both ends always correspond to real towns on screen rather than
+   a fixed scale that would be mostly dead space.
+3. **Town** (dropdown) — **its options are whatever survived the two filters
+   above**, so it can never offer a town that is not on screen. Selecting Mount
+   Lebanon and then a need band of +30 and up takes 910 towns → 273 → 17.
 
-Both charts respond: the scatter shows the selected town among its peers, and the
-profile chart compares that town against its peer group and the national average.
-Each control has an on-page expander explaining the user question it answers, why
-that widget was chosen over alternatives considered, and the course concept it
-serves.
+A fourth control, a radio, switches the map between four measures.
+
+Each control has an on-page justification covering the user question it answers,
+why that widget was chosen over the alternatives considered, and the course
+concept it serves.
+
+## The visualizations
+
+| Chart | Driven by | Shows |
+|-------|-----------|-------|
+| Peer scatter | all three filters | the selected town among its peers, illiteracy × university attainment, coloured by dropout rate |
+| Profile comparison | all three filters | the town's seven education levels against its peer group and the national average |
+| Need ranking | governorate + need band | the highest-need towns currently in scope, selected town highlighted |
+| Governorate map | selection outline only | national context — always all seven regions, so the drill-down keeps its frame of reference |
 
 ## Data
 
@@ -63,8 +75,21 @@ streamlit run streamlit_app.py
 
 | File | Purpose |
 |------|---------|
-| `streamlit_app.py` | The page: layout, the two linked controls, justifications |
-| `charts.py` | The two Plotly figures |
+| `streamlit_app.py` | The page: layout, the linked controls, justifications |
+| `charts.py` | The four Plotly figures |
 | `data_prep.py` | Loading, cleaning, governorate rollup, need index |
 | `Educational_Level-Lebanon-2023.csv` | The dataset |
+| `lebanon_adm1.geojson` | Governorate boundaries ([geoBoundaries](https://www.geoboundaries.org/), CC BY 4.0) |
 | `requirements.txt` | Dependencies |
+
+### A note on the boundary file
+
+geoBoundaries follows RFC 7946, which winds polygon exterior rings
+counter-clockwise. Plotly's d3-geo interprets a polygon by its winding *on the
+sphere*, so a spec-compliant ring renders as "everything except this shape" — one
+region floods the canvas and the rest punch holes in it. `charts.py` re-winds the
+rings on load; the check is idempotent, so a re-downloaded file works either way.
+
+The file also reflects the 2017 split of Keserwan-Jbeil from Mount Lebanon, which
+postdates this dataset — both shapes therefore carry the Mount Lebanon value.
+Beirut is left unfilled, as it has no towns in the data.
