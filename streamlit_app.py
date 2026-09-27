@@ -29,9 +29,9 @@ st.set_page_config(page_title="Lebanon Education Explorer", page_icon="📚",
 st.markdown(
     """
 <style>
-  .block-container { padding-top: 2.2rem; max-width: 1500px; }
-  .eyebrow { font-size:.72rem; letter-spacing:.16em; font-weight:700;
-             color:#2a78d6; text-transform:uppercase; }
+  .block-container { padding-top: 3.6rem; max-width: 1500px; }
+  .eyebrow { font-size:.78rem; letter-spacing:.16em; font-weight:700;
+             color:#2a78d6; text-transform:uppercase; padding-top:.15rem; }
   .hero { font-size:2.9rem; line-height:1.06; font-weight:800; color:#0b0b0b;
           margin:.35rem 0 .5rem; letter-spacing:-.02em; }
   .hero em { font-style:normal; color:#eb6834; }
@@ -67,7 +67,7 @@ national = df[LEVEL_ORDER].mean()
 within = variance_within_governorate(df)
 
 # ============================================================ sidebar controls
-st.sidebar.markdown('<p class="eyebrow">Drill down</p>', unsafe_allow_html=True)
+st.sidebar.markdown('<div class="eyebrow">Drill down</div>', unsafe_allow_html=True)
 st.sidebar.caption("Region → need band → town")
 
 all_govs = sorted(df["Governorate"].unique())
@@ -109,16 +109,16 @@ outside = int((~top120["Governorate"].isin(["Akkar", "Baalbek-Hermel"])).sum())
 below_national = (df["University"] < national["University"]).mean() * 100
 corr_illit = df["Illiterate"].corr(df["University"])
 
-st.markdown('<p class="eyebrow">Lebanon · town-level education</p>',
+st.markdown('<div class="eyebrow">Lebanon · town-level education</div>',
             unsafe_allow_html=True)
 st.markdown(
-    f'<p class="hero">The regional average is a <em>bad map</em>.</p>',
+    f'<div class="hero">The regional average is a <em>bad map</em>.</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
-    f'<p class="deck">Lebanon reports education by governorate — seven numbers for '
+    f'<div class="deck">Lebanon reports education by governorate — seven numbers for '
     f'{quality["towns_analysed"]:,} towns. Almost everything that separates one town '
-    f'from the next disappears at that level.</p>',
+    f'from the next disappears at that level.</div>',
     unsafe_allow_html=True,
 )
 
@@ -178,21 +178,18 @@ with right:
     st.plotly_chart(
         profile_comparison(town_row, peers, national, scope_label), width="stretch"
     )
-st.plotly_chart(need_ranking(peers, town_row), width="stretch")
-
-st.divider()
-
-# ====================================================================== map
-st.markdown('<p class="eyebrow">National context</p>', unsafe_allow_html=True)
-map_metric = st.radio("Colour by", options=list(MAP_METRICS.keys()),
-                      horizontal=True, label_visibility="collapsed")
-c1, c2 = st.columns([3, 1])
-with c1:
+rank_col, map_col = st.columns(2)
+with rank_col:
+    st.plotly_chart(need_ranking(peers, town_row), width="stretch")
+with map_col:
+    map_metric = st.radio("Colour by", options=list(MAP_METRICS.keys()),
+                          horizontal=True, label_visibility="collapsed")
     st.plotly_chart(governorate_map(df, map_metric, selected_govs, peers),
                     width="stretch")
-with c2:
+
+with st.expander("About the map"):
     st.markdown(
-        '<p class="note">The map deliberately shows <b>all</b> seven regions, '
+        '<div class="note">The map deliberately shows <b>all</b> seven regions, '
         'whatever the filters say, so the drill-down keeps its national context. '
         'Your selected regions are outlined, and each region\'s hover reports how '
         'many of its towns survived your filters.<br><br>'
@@ -201,7 +198,7 @@ with c2:
         'above break it.<br><br>'
         'Boundaries: geoBoundaries (CC BY 4.0). Keserwan-Jbeil was split from '
         'Mount Lebanon in 2017, after this data, so both carry one value. '
-        'Beirut is unfilled — no towns in the dataset.</p>',
+        'Beirut is unfilled — no towns in the dataset.</div>',
         unsafe_allow_html=True,
     )
 
@@ -211,8 +208,8 @@ tab_why, tab_method = st.tabs(["🎛️  Why these controls", "📋  Method"])
 # ================================================================= controls
 with tab_why:
     st.markdown(
-        '<p class="note">Each control narrows the next, so the page drills down '
-        'rather than filtering three things independently.</p>',
+        '<div class="note">Each control narrows the next, so the page drills down '
+        'rather than filtering three things independently.</div>',
         unsafe_allow_html=True,
     )
     w1, w2, w3 = st.columns(3)

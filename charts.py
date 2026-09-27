@@ -295,7 +295,7 @@ def governorate_map(df: pd.DataFrame, metric_label: str,
     fig.update_geos(fitbounds="locations", visible=False, bgcolor=SURFACE,
                     projection_type="mercator")
     _style(fig, f"{metric_label} by governorate",
-           "Outlined = your selection", height=430)
+           "Outlined = your selection", height=470)
     fig.update_layout(margin=dict(l=10, r=10, t=76, b=10),
                       geo=dict(bgcolor=SURFACE))
     return fig
