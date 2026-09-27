@@ -7,6 +7,7 @@ view that the deck showed as a governorate heatmap, re-cut for one town.
 
 import json
 import pathlib
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -139,8 +140,8 @@ def peer_scatter(peers: pd.DataFrame, town_row: pd.Series) -> go.Figure:
 
     _style(
         fig,
-        f"{town_row['Town']} among its {len(peers) - 1:,} peer towns",
-        "Each dot is one town; colour shows the school-dropout rate",
+        f"{town_row['Town']} among {len(peers) - 1:,} peers",
+        "Colour = dropout rate",
     )
     fig.update_xaxes(title="Illiterate residents (%)")
     fig.update_yaxes(title="Residents with a university education (%)")
@@ -172,9 +173,8 @@ def profile_comparison(town_row: pd.Series, peers: pd.DataFrame,
     widest = max(gaps, key=lambda c: abs(gaps[c]))
     _style(
         fig,
-        f"{town_row['Town']} vs its peer group and the country",
-        f"Biggest gap to the national average: {widest.lower()} "
-        f"({gaps[widest]:+.0f} points)",
+        f"{town_row['Town']} vs peers and country",
+        f"Widest gap vs national: {widest.lower()} {gaps[widest]:+.0f} pts",
     )
     fig.update_xaxes(title=None, showgrid=False)
     fig.update_yaxes(title="Share of residents (%)")
@@ -186,9 +186,39 @@ def profile_comparison(town_row: pd.Series, peers: pd.DataFrame,
     return fig
 
 
+def _ring_is_ccw(ring) -> bool:
+    """Standard shoelace: positive area means counter-clockwise."""
+    return sum(ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1]
+               for i in range(len(ring) - 1)) > 0
+
+
+def _orient_for_plotly(geojson: dict) -> dict:
+    """Wind exterior rings clockwise, holes counter-clockwise.
+
+    RFC 7946 asks for the opposite (counter-clockwise exteriors), and
+    geoBoundaries follows the spec — but plotly's d3-geo treats a polygon on the
+    sphere by its winding, so a spec-compliant ring is read as "everything except
+    this shape". The symptom is one region flooding the entire canvas while the
+    others punch holes in it. Re-winding here fixes it at the source, and the
+    check makes it idempotent whatever orientation the file arrives in.
+    """
+    for feature in geojson["features"]:
+        geom = feature["geometry"]
+        polys = (geom["coordinates"] if geom["type"] == "MultiPolygon"
+                 else [geom["coordinates"]])
+        for poly in polys:
+            for index, ring in enumerate(poly):
+                exterior = index == 0
+                if _ring_is_ccw(ring) == exterior:
+                    poly[index] = list(reversed(ring))
+        geom["coordinates"] = polys if geom["type"] == "MultiPolygon" else polys[0]
+    return geojson
+
+
+@lru_cache(maxsize=1)
 def _load_geojson():
     with open(GEOJSON_PATH, encoding="utf-8") as fh:
-        return json.load(fh)
+        return _orient_for_plotly(json.load(fh))
 
 
 def governorate_map(df: pd.DataFrame, metric_label: str,
@@ -229,24 +259,36 @@ def governorate_map(df: pd.DataFrame, metric_label: str,
     )
 
     # Ring the governorates currently in scope so the map tracks the sidebar.
+    # Drawn as an explicit line trace rather than a second choropleth: two
+    # choropleths on one geo subplot can only share a single `geojson`, and the
+    # loser stops resolving its locations, which renders as giant rectangles.
     if highlight:
-        shapes = [s for s, g in SHAPE_TO_GOV.items() if g in highlight]
-        sel = {"type": "FeatureCollection",
-               "features": [f for f in gj["features"]
-                            if f["properties"]["shapeName"] in shapes]}
+        shapes = {s for s, g in SHAPE_TO_GOV.items() if g in highlight}
+        lon, lat = [], []
+        for feature in gj["features"]:
+            if feature["properties"]["shapeName"] not in shapes:
+                continue
+            geom = feature["geometry"]
+            polys = (geom["coordinates"] if geom["type"] == "MultiPolygon"
+                     else [geom["coordinates"]])
+            for poly in polys:
+                for ring in poly:
+                    lon.extend(c[0] for c in ring)
+                    lat.extend(c[1] for c in ring)
+                    lon.append(None)   # break the line between rings
+                    lat.append(None)
         fig.add_trace(
-            go.Choropleth(
-                geojson=sel, locations=shapes, featureidkey="properties.shapeName",
-                z=[0] * len(shapes), showscale=False,
-                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
-                marker=dict(line=dict(color=GOV_COLOR, width=3)),
-                hoverinfo="skip",
+            go.Scattergeo(
+                lon=lon, lat=lat, mode="lines",
+                line=dict(color=GOV_COLOR, width=2.5),
+                hoverinfo="skip", showlegend=False,
             )
         )
 
-    fig.update_geos(fitbounds="locations", visible=False, bgcolor=SURFACE)
+    fig.update_geos(fitbounds="locations", visible=False, bgcolor=SURFACE,
+                    projection_type="mercator")
     _style(fig, f"{metric_label} by governorate",
-           "Outlined regions are the ones selected in the sidebar", height=430)
+           "Outlined = your selection", height=430)
     fig.update_layout(margin=dict(l=10, r=10, t=76, b=10),
                       geo=dict(bgcolor=SURFACE))
     return fig
@@ -271,9 +313,8 @@ def need_ranking(peers: pd.DataFrame, town_row: pd.Series, top_n: int = 15) -> g
         )
     )
     shown = min(top_n, len(peers))
-    _style(fig, f"Highest-need towns in scope (top {shown})",
-           "Need = (illiterate + elementary) − (university + higher education); "
-           "your selected town is highlighted", height=470)
+    _style(fig, f"Highest need in scope (top {shown})",
+           "Your town in orange", height=470)
     fig.update_xaxes(title="Need score (percentage points)")
     fig.update_yaxes(title=None, showgrid=False)
     fig.update_layout(bargap=0.3)
